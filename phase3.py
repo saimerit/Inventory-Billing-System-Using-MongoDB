@@ -8,7 +8,6 @@ import io
 import hashlib
 import certifi
 import time
-import pytz
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
@@ -43,8 +42,8 @@ st.set_page_config(
 
 # --- Helper Functions ---
 def get_ist_time():
-    """Returns the current time in Indian Standard Time."""
-    return datetime.now(pytz.timezone('Asia/Kolkata'))
+    """Returns the current time as a naive datetime object representing IST."""
+    return datetime.utcnow() + timedelta(hours=5, minutes=30)
 
 def generate_unique_id(prefix):
     return f"{prefix}-{shortuuid.uuid()}"
@@ -381,7 +380,7 @@ def view_bills_page():
             for bill in all_bills:
                 if bill['bill_id'].startswith("MISS-"):
                     status_emoji = "💀"
-                    expander_label = f"{status_emoji} Missing Item Report: {bill['bill_id']} - {bill['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"
+                    expander_label = f"{status_emoji} Missing Item Report: {bill['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"
                 else:
                     status = bill.get('payment_status', 'Paid')
                     status_emoji = "✅" if status == "Paid" else "❌"
