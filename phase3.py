@@ -10,7 +10,7 @@ import certifi
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
-MONGO_CONNECTION_STRING = "mongodb://localhost:27017/"
+MONGO_CONNECTION_STRING = "mongodb+srv://saiardhendu10:cR7y9ujOYZCm9i6v@colleageroom444cluster0.vyst9jx.mongodb.net/?retryWrites=true&w=majority&appName=ColleageRoom444Cluster0"
 
 @st.cache_resource
 def get_mongo_client():
