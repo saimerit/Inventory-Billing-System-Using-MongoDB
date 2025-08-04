@@ -7,6 +7,7 @@ import plotly.express as px
 import io
 import hashlib
 import certifi
+import time
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
@@ -717,6 +718,7 @@ def login_page():
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = user['username']
                 st.session_state['role'] = user['role']
+                st.session_state['last_activity'] = datetime.now()
                 update_user_status(username, 'Online')
                 st.rerun()
             else:
@@ -733,6 +735,20 @@ def initial_setup():
 # --- App Entry Point ---
 def main_app():
     st.title("📦 Inventory and Billing Management System")
+    
+    # --- Inactivity Logout Logic ---
+    INACTIVITY_TIMEOUT = timedelta(minutes=5)
+    if 'last_activity' in st.session_state:
+        if datetime.now() - st.session_state['last_activity'] > INACTIVITY_TIMEOUT:
+            update_user_status(st.session_state['username'], 'Offline')
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.warning("You have been logged out due to inactivity.")
+            time.sleep(2)
+            st.rerun()
+    st.session_state['last_activity'] = datetime.now()
+
+
     update_user_status(st.session_state['username'], 'Online')
 
     user_role = st.session_state['role']
@@ -748,6 +764,7 @@ def main_app():
 
     st.session_state.page = st.sidebar.radio("Navigate", page_options, index=page_options.index(st.session_state.page))
     st.sidebar.write(f"Logged in as: **{st.session_state['username']}** ({st.session_state['role']})")
+    
     if st.sidebar.button("Logout"):
         update_user_status(st.session_state['username'], 'Offline')
         for key in list(st.session_state.keys()):
