@@ -196,123 +196,154 @@ def inventory_management_page():
         st.error(f"An error occurred while fetching inventory: {e}")
 
 def billing_system_page():
-    is_edit_mode = "bill_to_edit" in st.session_state
-    st.header("Update Bill" if is_edit_mode else "Create a New Bill")
+    billing_tabs = st.tabs(["Create Bill", "Report Missing Item"])
 
-    inventory_items = list(inventory_collection.find({}, {'_id': 0, 'item_name': 1, 'item_id': 1, 'quantity': 1, 'purchase_price': 1, 'selling_price': 1}))
-    
-    if is_edit_mode:
-        bill_to_edit = st.session_state.bill_to_edit
-        for item_in_bill in bill_to_edit['items']:
-            for inv_item in inventory_items:
-                if inv_item['item_id'] == item_in_bill['item_id']:
-                    inv_item['quantity'] += item_in_bill['quantity']
-                    break
-    
-    available_items = [item for item in inventory_items if item['quantity'] > 0]
-    if not available_items:
-        st.warning("Inventory is empty or all items are out of stock. Please add or restock items.")
-        st.stop()
+    with billing_tabs[0]:
+        is_edit_mode = "bill_to_edit" in st.session_state
+        st.header("Update Bill" if is_edit_mode else "Create a New Bill")
 
-    item_options = {f"{item['item_name']} (Stock: {item['quantity']})": item['item_id'] for item in available_items}
-    
-    default_selected_items = []
-    if is_edit_mode:
-        bill_to_edit = st.session_state.bill_to_edit
-        for item_in_bill in bill_to_edit['items']:
-             for option_name, option_id in item_options.items():
-                 if option_id == item_in_bill['item_id']:
-                     default_selected_items.append(option_name)
-                     break
-
-    st.subheader("1. Select Items")
-    selected_item_names = st.multiselect("Select Items for the bill", options=item_options.keys(), default=default_selected_items, label_visibility="collapsed")
-
-    if selected_item_names:
-        bill_items_with_qty, suggested_total_sell_price, suggested_total_purchase_price = [], 0, 0
-        st.subheader("2. Specify Quantities")
-        for name in selected_item_names:
-            item_id = item_options[name]
-            item_details = next((item for item in available_items if item['item_id'] == item_id), None)
-            if item_details:
-                max_qty = item_details['quantity']
-                default_qty = 1
-                if is_edit_mode:
-                    item_in_bill = next((i for i in st.session_state.bill_to_edit['items'] if i['item_id'] == item_id), None)
-                    if item_in_bill: default_qty = item_in_bill['quantity']
-
-                col1, col2 = st.columns([2, 1])
-                with col1: st.text(f"{item_details['item_name']} (Price: ₹{item_details.get('selling_price', 0):.2f})")
-                with col2: qty = st.number_input("Quantity", 1, max_qty, default_qty, 1, key=f"qty_{item_id}", label_visibility="collapsed")
-                
-                bill_items_with_qty.append({
-                    "item_id": item_id, "item_name": item_details['item_name'], "quantity": qty,
-                    "selling_price": item_details.get('selling_price', 0), "purchase_price": item_details.get('purchase_price', 0)
-                })
-                suggested_total_sell_price += qty * item_details.get('selling_price', 0)
-                suggested_total_purchase_price += qty * item_details.get('purchase_price', 0)
+        inventory_items = list(inventory_collection.find({}, {'_id': 0, 'item_name': 1, 'item_id': 1, 'quantity': 1, 'purchase_price': 1, 'selling_price': 1}))
         
-        st.subheader("3. Finalize Bill")
-        st.metric("Suggested Sell Price", f"₹{suggested_total_sell_price:.2f}")
-        sell_at_cost = st.checkbox("Sell at Purchase Price")
+        if is_edit_mode:
+            bill_to_edit = st.session_state.bill_to_edit
+            for item_in_bill in bill_to_edit['items']:
+                for inv_item in inventory_items:
+                    if inv_item['item_id'] == item_in_bill['item_id']:
+                        inv_item['quantity'] += item_in_bill['quantity']
+                        break
+        
+        available_items = [item for item in inventory_items if item['quantity'] > 0]
+        if not available_items:
+            st.warning("Inventory is empty or all items are out of stock. Please add or restock items.")
+            st.stop()
 
-        with st.form("create_bill_form"):
-            customer_name = ""
-            if sell_at_cost:
-                default_name = st.session_state.bill_to_edit.get('customer_name', '') if is_edit_mode else ""
-                customer_name = st.text_input("Customer Name (for at-cost sale)", value=default_name)
+        item_options = {f"{item['item_name']} (Stock: {item['quantity']})": item['item_id'] for item in available_items}
+        
+        default_selected_items = []
+        if is_edit_mode:
+            bill_to_edit = st.session_state.bill_to_edit
+            for item_in_bill in bill_to_edit['items']:
+                 for option_name, option_id in item_options.items():
+                     if option_id == item_in_bill['item_id']:
+                         default_selected_items.append(option_name)
+                         break
 
-            final_price_value = suggested_total_purchase_price if sell_at_cost else suggested_total_sell_price
-            total_sell_price = st.number_input("Final Sell Price (₹)", 0.01, value=float(final_price_value), format="%.2f")
-            
-            payment_mode_index = ["Cash", "UPI"].index(st.session_state.bill_to_edit['payment_mode']) if is_edit_mode else 1
-            payment_status_index = ["Paid", "Unpaid"].index(st.session_state.bill_to_edit.get('payment_status', 'Paid')) if is_edit_mode else 0
+        st.subheader("1. Select Items")
+        selected_item_names = st.multiselect("Select Items for the bill", options=item_options.keys(), default=default_selected_items, label_visibility="collapsed")
 
-            col1, col2 = st.columns(2)
-            with col1: payment_mode = st.radio("Mode of Payment", ["Cash", "UPI"], horizontal=True, index=payment_mode_index)
-            with col2: payment_status = st.radio("Payment Status", ["Paid", "Unpaid"], horizontal=True, index=payment_status_index)
-            
-            submit_button_label = "Update Bill" if is_edit_mode else "Generate Bill"
-            submit_bill = st.form_submit_button(submit_button_label)
-
-            if submit_bill:
-                if not bill_items_with_qty and not is_edit_mode:
-                    st.error("Please select at least one item for the bill.")
-                else:
-                    total_purchase_cost = sum(item['quantity'] * item['purchase_price'] for item in bill_items_with_qty)
-                    profit = total_sell_price - total_purchase_cost
-                    final_bill_items = [{k: v for k, v in item.items() if k != 'purchase_price'} for item in bill_items_with_qty]
-
+        if selected_item_names:
+            bill_items_with_qty, suggested_total_sell_price, suggested_total_purchase_price = [], 0, 0
+            st.subheader("2. Specify Quantities")
+            for name in selected_item_names:
+                item_id = item_options[name]
+                item_details = next((item for item in available_items if item['item_id'] == item_id), None)
+                if item_details:
+                    max_qty = item_details['quantity']
+                    default_qty = 1
                     if is_edit_mode:
-                        original_bill = st.session_state.bill_to_edit
-                        inventory_deltas = {}
-                        for item in original_bill['items']: inventory_deltas[item['item_id']] = inventory_deltas.get(item['item_id'], 0) + item['quantity']
-                        for item in final_bill_items: inventory_deltas[item['item_id']] = inventory_deltas.get(item['item_id'], 0) - item['quantity']
-                        for item_id, quantity_change in inventory_deltas.items():
-                            if quantity_change != 0: inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": quantity_change}})
-                        
-                        updated_bill_data = {
-                            "items": final_bill_items, "total_purchase_cost": total_purchase_cost, "total_sell_price": total_sell_price,
-                            "profit": profit, "payment_mode": payment_mode, "payment_status": payment_status,
-                            "customer_name": customer_name if sell_at_cost else "", "timestamp": datetime.now(),
-                            "last_edited_by": st.session_state['username']
-                        }
-                        bills_collection.update_one({"bill_id": original_bill['bill_id']}, {"$set": updated_bill_data})
-                        st.success(f"🎉 Bill {original_bill['bill_id']} updated successfully!")
-                        del st.session_state.bill_to_edit
-                        st.session_state.page = "View Bills"
-                        st.rerun()
+                        item_in_bill = next((i for i in st.session_state.bill_to_edit['items'] if i['item_id'] == item_id), None)
+                        if item_in_bill: default_qty = item_in_bill['quantity']
+
+                    col1, col2 = st.columns([2, 1])
+                    with col1: st.text(f"{item_details['item_name']} (Price: ₹{item_details.get('selling_price', 0):.2f})")
+                    with col2: qty = st.number_input("Quantity", 1, max_qty, default_qty, 1, key=f"qty_{item_id}", label_visibility="collapsed")
+                    
+                    bill_items_with_qty.append({
+                        "item_id": item_id, "item_name": item_details['item_name'], "quantity": qty,
+                        "selling_price": item_details.get('selling_price', 0), "purchase_price": item_details.get('purchase_price', 0)
+                    })
+                    suggested_total_sell_price += qty * item_details.get('selling_price', 0)
+                    suggested_total_purchase_price += qty * item_details.get('purchase_price', 0)
+            
+            st.subheader("3. Finalize Bill")
+            st.metric("Suggested Sell Price", f"₹{suggested_total_sell_price:.2f}")
+            sell_at_cost = st.checkbox("Sell at Purchase Price")
+
+            with st.form("create_bill_form"):
+                customer_name = ""
+                if sell_at_cost:
+                    default_name = st.session_state.bill_to_edit.get('customer_name', '') if is_edit_mode else ""
+                    customer_name = st.text_input("Customer Name (for at-cost sale)", value=default_name)
+
+                final_price_value = suggested_total_purchase_price if sell_at_cost else suggested_total_sell_price
+                total_sell_price = st.number_input("Final Sell Price (₹)", 0.01, value=float(final_price_value), format="%.2f")
+                
+                payment_mode_index = ["Cash", "UPI"].index(st.session_state.bill_to_edit['payment_mode']) if is_edit_mode else 1
+                payment_status_index = ["Paid", "Unpaid"].index(st.session_state.bill_to_edit.get('payment_status', 'Paid')) if is_edit_mode else 0
+
+                col1, col2 = st.columns(2)
+                with col1: payment_mode = st.radio("Mode of Payment", ["Cash", "UPI"], horizontal=True, index=payment_mode_index)
+                with col2: payment_status = st.radio("Payment Status", ["Paid", "Unpaid"], horizontal=True, index=payment_status_index)
+                
+                submit_button_label = "Update Bill" if is_edit_mode else "Generate Bill"
+                submit_bill = st.form_submit_button(submit_button_label)
+
+                if submit_bill:
+                    if not bill_items_with_qty and not is_edit_mode:
+                        st.error("Please select at least one item for the bill.")
                     else:
+                        total_purchase_cost = sum(item['quantity'] * item['purchase_price'] for item in bill_items_with_qty)
+                        profit = total_sell_price - total_purchase_cost
+                        final_bill_items = [{k: v for k, v in item.items() if k != 'purchase_price'} for item in bill_items_with_qty]
+
+                        if is_edit_mode:
+                            original_bill = st.session_state.bill_to_edit
+                            inventory_deltas = {}
+                            for item in original_bill['items']: inventory_deltas[item['item_id']] = inventory_deltas.get(item['item_id'], 0) + item['quantity']
+                            for item in final_bill_items: inventory_deltas[item['item_id']] = inventory_deltas.get(item['item_id'], 0) - item['quantity']
+                            for item_id, quantity_change in inventory_deltas.items():
+                                if quantity_change != 0: inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": quantity_change}})
+                            
+                            updated_bill_data = {
+                                "items": final_bill_items, "total_purchase_cost": total_purchase_cost, "total_sell_price": total_sell_price,
+                                "profit": profit, "payment_mode": payment_mode, "payment_status": payment_status,
+                                "customer_name": customer_name if sell_at_cost else "", "timestamp": datetime.now(),
+                                "last_edited_by": st.session_state['username']
+                            }
+                            bills_collection.update_one({"bill_id": original_bill['bill_id']}, {"$set": updated_bill_data})
+                            st.success(f"🎉 Bill {original_bill['bill_id']} updated successfully!")
+                            del st.session_state.bill_to_edit
+                            st.session_state.page = "View Bills"
+                            st.rerun()
+                        else:
+                            bill_data = {
+                                "bill_id": generate_unique_id("BILL"), "items": final_bill_items, "total_purchase_cost": total_purchase_cost,
+                                "total_sell_price": total_sell_price, "profit": profit, "payment_mode": payment_mode,
+                                "payment_status": payment_status, "customer_name": customer_name if sell_at_cost else "", 
+                                "created_by": st.session_state['username'], "timestamp": datetime.now()
+                            }
+                            bills_collection.insert_one(bill_data)
+                            for item in final_bill_items:
+                                inventory_collection.update_one({"item_id": item['item_id']}, {"$inc": {"quantity": -item['quantity']}})
+                            st.success(f"🎉 Bill {bill_data['bill_id']} generated successfully!")
+                            st.rerun()
+    
+    with billing_tabs[1]:
+        st.subheader("Report a Missing Item")
+        inventory_list = list(inventory_collection.find({"quantity": {"$gt": 0}}, {'_id': 0, 'item_name': 1, 'item_id': 1, 'quantity': 1}))
+        if not inventory_list:
+            st.info("No items in stock to report as missing.")
+        else:
+            item_options = {f"{item['item_name']} (Stock: {item['quantity']})": item['item_id'] for item in inventory_list}
+            selected_item_name = st.selectbox("Select Missing Item", options=item_options.keys())
+            
+            if selected_item_name:
+                item_id = item_options[selected_item_name]
+                item_details = inventory_collection.find_one({"item_id": item_id})
+                
+                with st.form("missing_item_form"):
+                    missing_quantity = st.number_input("Quantity Missing", min_value=1, max_value=item_details['quantity'], step=1)
+                    if st.form_submit_button("Report Missing"):
+                        total_purchase_cost = item_details['purchase_price'] * missing_quantity
                         bill_data = {
-                            "bill_id": generate_unique_id("BILL"), "items": final_bill_items, "total_purchase_cost": total_purchase_cost,
-                            "total_sell_price": total_sell_price, "profit": profit, "payment_mode": payment_mode,
-                            "payment_status": payment_status, "customer_name": customer_name if sell_at_cost else "", 
+                            "bill_id": generate_unique_id("MISS"), "items": [{"item_id": item_id, "item_name": selected_item_name, "quantity": missing_quantity}],
+                            "total_purchase_cost": total_purchase_cost, "total_sell_price": 0, "profit": -total_purchase_cost,
+                            "payment_mode": "N/A", "payment_status": "Paid", "customer_name": "Missing Stock", 
                             "created_by": st.session_state['username'], "timestamp": datetime.now()
                         }
                         bills_collection.insert_one(bill_data)
-                        for item in final_bill_items:
-                            inventory_collection.update_one({"item_id": item['item_id']}, {"$inc": {"quantity": -item['quantity']}})
-                        st.success(f"🎉 Bill {bill_data['bill_id']} generated successfully!")
+                        inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": -missing_quantity}})
+                        st.success(f"Successfully reported {missing_quantity} of '{selected_item_name}' as missing. A loss has been recorded.")
                         st.rerun()
 
 def view_bills_page():
@@ -323,46 +354,63 @@ def view_bills_page():
             st.info("No bills have been generated yet.")
         else:
             for bill in all_bills:
-                status = bill.get('payment_status', 'Paid')
-                status_emoji = "✅" if status == "Paid" else "❌"
-                expander_label = f"{status_emoji} Bill ID: {bill['bill_id']} - {bill['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"
+                if bill['bill_id'].startswith("MISS-"):
+                    status_emoji = "💀"
+                    expander_label = f"{status_emoji} Missing Item Report: {bill['bill_id']} - {bill['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"
+                else:
+                    status = bill.get('payment_status', 'Paid')
+                    status_emoji = "✅" if status == "Paid" else "❌"
+                    expander_label = f"{status_emoji} Bill ID: {bill['bill_id']} - {bill['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"
                 
                 with st.expander(expander_label):
-                    cols = st.columns([2,2,2,1,1,1])
-                    cols[0].metric("Total Sell Price", f"₹{bill['total_sell_price']:.2f}")
-                    cols[1].metric("Cost of Goods", f"₹{bill.get('total_purchase_cost', 0):.2f}")
-                    profit = bill.get('profit', 0)
-                    cols[2].metric("Profit/Loss", f"₹{profit:.2f}", delta=f"{profit:.2f}")
-                    
-                    with cols[3]:
-                        if st.button("Edit", key=f"edit_{bill['bill_id']}"):
-                            st.session_state.bill_to_edit = bill
-                            st.session_state.page = "Billing System"
-                            st.rerun()
-                    with cols[4]:
-                        if st.button("Delete", key=f"delete_{bill['bill_id']}"):
+                    if bill['bill_id'].startswith("MISS-"):
+                        st.write(f"**Reported By:** {bill.get('created_by', 'N/A')}")
+                        st.metric("Total Loss", f"₹{bill.get('total_purchase_cost', 0):.2f}")
+                        if st.button("Reverse Report", key=f"delete_{bill['bill_id']}"):
                             for item in bill['items']:
                                 inventory_collection.update_one({"item_id": item['item_id']}, {"$inc": {"quantity": item['quantity']}})
                                 item_details = inventory_collection.find_one({"item_id": item['item_id']})
-                                log_inventory_change(item['item_id'], item['item_name'], item['quantity'], item_details['purchase_price'] * item['quantity'], f"Bill Deletion Reversal ({bill['bill_id']})")
+                                log_inventory_change(item['item_id'], item['item_name'], item['quantity'], item_details['purchase_price'] * item['quantity'], f"Missing Report Reversal ({bill['bill_id']})")
                             bills_collection.delete_one({"bill_id": bill['bill_id']})
-                            st.success(f"Bill {bill['bill_id']} deleted successfully.")
+                            st.success(f"Missing item report {bill['bill_id']} reversed.")
                             st.rerun()
-                    with cols[5]:
-                        if status == 'Unpaid':
-                            if st.button("Mark Paid", key=f"pay_{bill['bill_id']}"):
-                                bills_collection.update_one({"bill_id": bill['bill_id']}, {"$set": {"payment_status": "Paid"}})
-                                st.success(f"Bill {bill['bill_id']} marked as Paid.")
+                    else:
+                        cols = st.columns([2,2,2,1,1,1])
+                        cols[0].metric("Total Sell Price", f"₹{bill['total_sell_price']:.2f}")
+                        cols[1].metric("Cost of Goods", f"₹{bill.get('total_purchase_cost', 0):.2f}")
+                        profit = bill.get('profit', 0)
+                        cols[2].metric("Profit/Loss", f"₹{profit:.2f}", delta=f"{profit:.2f}")
+                        
+                        with cols[3]:
+                            if st.button("Edit", key=f"edit_{bill['bill_id']}"):
+                                st.session_state.bill_to_edit = bill
+                                st.session_state.page = "Billing System"
                                 st.rerun()
+                        with cols[4]:
+                            if st.button("Delete", key=f"delete_{bill['bill_id']}"):
+                                for item in bill['items']:
+                                    inventory_collection.update_one({"item_id": item['item_id']}, {"$inc": {"quantity": item['quantity']}})
+                                    item_details = inventory_collection.find_one({"item_id": item['item_id']})
+                                    log_inventory_change(item['item_id'], item['item_name'], item['quantity'], item_details['purchase_price'] * item['quantity'], f"Bill Deletion Reversal ({bill['bill_id']})")
+                                bills_collection.delete_one({"bill_id": bill['bill_id']})
+                                st.success(f"Bill {bill['bill_id']} deleted successfully.")
+                                st.rerun()
+                        with cols[5]:
+                            if bill.get('payment_status') == 'Unpaid':
+                                if st.button("Mark Paid", key=f"pay_{bill['bill_id']}"):
+                                    bills_collection.update_one({"bill_id": bill['bill_id']}, {"$set": {"payment_status": "Paid"}})
+                                    st.success(f"Bill {bill['bill_id']} marked as Paid.")
+                                    st.rerun()
 
-                    color = "green" if status == "Paid" else "red"
-                    st.write(f"**Payment Mode:** {bill['payment_mode']} | **Status:** <span style='color:{color};'>{status}</span>", unsafe_allow_html=True)
-                    if bill.get('customer_name'): st.write(f"**Customer:** {bill['customer_name']}")
-                    if bill.get('created_by'): st.write(f"**Created By:** {bill['created_by']}")
-                    if bill.get('last_edited_by'): st.write(f"**Last Edited By:** {bill['last_edited_by']}")
+                        status = bill.get('payment_status', 'Paid')
+                        color = "green" if status == "Paid" else "red"
+                        st.write(f"**Payment Mode:** {bill['payment_mode']} | **Status:** <span style='color:{color};'>{status}</span>", unsafe_allow_html=True)
+                        if bill.get('customer_name'): st.write(f"**Customer:** {bill['customer_name']}")
+                        if bill.get('created_by'): st.write(f"**Created By:** {bill['created_by']}")
+                        if bill.get('last_edited_by'): st.write(f"**Last Edited By:** {bill['last_edited_by']}")
 
-                    items_df = pd.DataFrame(bill['items'])
-                    st.dataframe(items_df, use_container_width=True)
+                        items_df = pd.DataFrame(bill['items'])
+                        st.dataframe(items_df, use_container_width=True)
     except Exception as e:
         st.error(f"An error occurred while fetching bills: {e}")
 
