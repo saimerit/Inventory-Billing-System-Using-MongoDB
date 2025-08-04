@@ -7,12 +7,10 @@ import plotly.express as px
 import io
 import hashlib
 import certifi
-import warnings
-warnings.filterwarnings("ignore")
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
-MONGO_CONNECTION_STRING = "mongodb+srv://saiardhendu10:cR7y9ujOYZCm9i6v@colleageroom444cluster0.vyst9jx.mongodb.net/?retryWrites=true&w=majority&appName=ColleageRoom444Cluster0"
+MONGO_CONNECTION_STRING = "mongodb://localhost:27017/"
 
 @st.cache_resource
 def get_mongo_client():
@@ -151,8 +149,8 @@ def inventory_management_page():
                     
                     st.divider()
                     st.write("**Update Prices**")
-                    new_purchase_price = st.number_input("New Purchase Price (optional)", value=item_details['purchase_price'], format="%.2f")
-                    new_selling_price = st.number_input("New Selling Price (optional)", value=item_details['selling_price'], format="%.2f")
+                    new_purchase_price = st.number_input("New Purchase Price (optional)", value=float(item_details['purchase_price']), format="%.2f")
+                    new_selling_price = st.number_input("New Selling Price (optional)", value=float(item_details['selling_price']), format="%.2f")
                     
                     update_submitted = st.form_submit_button("Update Item")
                     
