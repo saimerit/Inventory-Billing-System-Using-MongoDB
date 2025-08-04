@@ -441,14 +441,23 @@ def analyze_profit_page():
         st.info("No data available to analyze.")
     else:
         bills_df = pd.DataFrame(all_bills) if all_bills else pd.DataFrame()
-        if not bills_df.empty:
-            bills_df['business_date'] = bills_df['timestamp'].apply(get_business_date)
-            paid_bills_df = bills_df[bills_df['payment_status'] == 'Paid'].copy()
-            unpaid_bills_df = bills_df[bills_df['payment_status'] == 'Unpaid']
-            total_outstanding = unpaid_bills_df['total_sell_price'].sum()
-            st.metric("Total Outstanding Revenue", f"₹{total_outstanding:.2f}")
-        else:
-            st.metric("Total Outstanding Revenue", "₹0.00")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if not bills_df.empty:
+                unpaid_bills_df = bills_df[bills_df['payment_status'] == 'Unpaid']
+                total_outstanding = unpaid_bills_df['total_sell_price'].sum()
+                st.metric("Total Outstanding Revenue", f"₹{total_outstanding:.2f}")
+            else:
+                st.metric("Total Outstanding Revenue", "₹0.00")
+        with col2:
+            if not bills_df.empty:
+                paid_bills_df = bills_df[bills_df['payment_status'] == 'Paid'].copy()
+                total_profit = paid_bills_df['profit'].sum()
+                st.metric("Total Realized Profit", f"₹{total_profit:.2f}")
+            else:
+                st.metric("Total Realized Profit", "₹0.00")
+
 
         st.subheader("Overall Sales vs. Purchases")
         total_sales = 0
@@ -473,6 +482,8 @@ def analyze_profit_page():
 
 
         if not bills_df.empty and 'payment_status' in bills_df.columns and not paid_bills_df.empty:
+            bills_df['business_date'] = bills_df['timestamp'].apply(get_business_date)
+            paid_bills_df['business_date'] = paid_bills_df['timestamp'].apply(get_business_date)
             st.subheader("Day-wise Realized Profit (from Paid Bills)")
             daily_profit = paid_bills_df.groupby('business_date')['profit'].sum()
             st.line_chart(daily_profit)
