@@ -56,11 +56,10 @@ def log_inventory_change(item_id, item_name, quantity_change, purchase_cost_chan
     inventory_log_collection.insert_one(log_entry)
 
 def get_business_date(timestamp):
-    """
-    Calculates the business date for a given timestamp.
-    Reverted to standard calendar day.
-    """
-    return timestamp.date()
+    if timestamp.hour < 6:
+        return timestamp.date() - timedelta(days=1)
+    else:
+        return timestamp.date()
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
