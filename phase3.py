@@ -56,6 +56,11 @@ def log_inventory_change(item_id, item_name, quantity_change, purchase_cost_chan
     inventory_log_collection.insert_one(log_entry)
 
 def get_business_date(timestamp):
+    """
+    Calculates the business date for a given timestamp.
+    A new business day starts after 6 AM. Transactions before that
+    belong to the previous day's business cycle.
+    """
     if timestamp.hour < 6:
         return timestamp.date() - timedelta(days=1)
     else:
@@ -99,7 +104,7 @@ def check_password():
 def inventory_management_page():
     st.header("Manage Your Inventory")
     
-    tab1, tab2 = st.tabs(["Add New Item", "Update Existing Item"])
+    tab1, tab2, tab3 = st.tabs(["Add New Item", "Update Existing Item", "Manual Cost Adjustment"])
 
     with tab1:
         st.subheader("Add a New Item")
@@ -182,6 +187,28 @@ def inventory_management_page():
                             st.rerun()
                         else:
                             st.warning("No changes were made.")
+    
+    with tab3:
+        st.subheader("Add a Manual Purchase Cost Adjustment")
+        with st.form("manual_adjustment_form", clear_on_submit=True):
+            adjustment_amount = st.number_input("Adjustment Amount (₹)", format="%.2f", help="Use a negative value for refunds or credits.")
+            reason = st.text_input("Reason for adjustment", placeholder="e.g., Shipping Fees, Supplier Refund")
+            
+            submitted = st.form_submit_button("Add Adjustment")
+
+            if submitted:
+                if adjustment_amount == 0 or not reason:
+                    st.warning("Please provide a non-zero amount and a reason.")
+                else:
+                    log_inventory_change(
+                        item_id="MANUAL_ADJUSTMENT",
+                        item_name="Manual Adjustment",
+                        quantity_change=0,
+                        purchase_cost_change=adjustment_amount,
+                        reason=reason
+                    )
+                    st.success("Manual cost adjustment logged successfully.")
+
     st.divider()
     st.subheader("Current Inventory")
     try:
@@ -369,8 +396,7 @@ def view_bills_page():
                         if st.button("Reverse Report", key=f"delete_{bill['bill_id']}"):
                             for item in bill['items']:
                                 inventory_collection.update_one({"item_id": item['item_id']}, {"$inc": {"quantity": item['quantity']}})
-                                item_details = inventory_collection.find_one({"item_id": item['item_id']})
-                                log_inventory_change(item['item_id'], item['item_name'], item['quantity'], item_details['purchase_price'] * item['quantity'], f"Missing Report Reversal ({bill['bill_id']})")
+                                log_inventory_change(item['item_id'], item['item_name'], item['quantity'], 0, f"Missing Report Reversal ({bill['bill_id']})")
                             bills_collection.delete_one({"bill_id": bill['bill_id']})
                             st.success(f"Missing item report {bill['bill_id']} reversed.")
                             st.rerun()
@@ -390,8 +416,7 @@ def view_bills_page():
                             if st.button("Delete", key=f"delete_{bill['bill_id']}"):
                                 for item in bill['items']:
                                     inventory_collection.update_one({"item_id": item['item_id']}, {"$inc": {"quantity": item['quantity']}})
-                                    item_details = inventory_collection.find_one({"item_id": item['item_id']})
-                                    log_inventory_change(item['item_id'], item['item_name'], item['quantity'], item_details['purchase_price'] * item['quantity'], f"Bill Deletion Reversal ({bill['bill_id']})")
+                                    log_inventory_change(item['item_id'], item['item_name'], item['quantity'], 0, f"Bill Deletion Reversal ({bill['bill_id']})")
                                 bills_collection.delete_one({"bill_id": bill['bill_id']})
                                 st.success(f"Bill {bill['bill_id']} deleted successfully.")
                                 st.rerun()
@@ -431,6 +456,28 @@ def analyze_profit_page():
             st.metric("Total Outstanding Revenue", f"₹{total_outstanding:.2f}")
         else:
             st.metric("Total Outstanding Revenue", "₹0.00")
+
+        st.subheader("Overall Sales vs. Purchases")
+        total_sales = 0
+        if not paid_bills_df.empty:
+            total_sales = paid_bills_df['total_sell_price'].sum()
+
+        total_purchases = 0
+        if all_inventory_logs:
+            log_df = pd.DataFrame(all_inventory_logs)
+            total_purchases = log_df['purchase_cost_change'].sum()
+
+        summary_data = {
+            'Category': ['Total Sales', 'Total Purchases'],
+            'Amount (₹)': [total_sales, total_purchases]
+        }
+        summary_df = pd.DataFrame(summary_data)
+        
+        fig_summary = px.bar(summary_df, x='Category', y='Amount (₹)', color='Category',
+                             labels={'Amount (₹)': 'Total Amount (₹)'},
+                             title="Total Sales vs. Total Purchases")
+        st.plotly_chart(fig_summary, use_container_width=True)
+
 
         if not bills_df.empty and 'payment_status' in bills_df.columns and not paid_bills_df.empty:
             st.subheader("Day-wise Realized Profit (from Paid Bills)")
@@ -474,7 +521,22 @@ def inventory_history_page():
         if not all_logs:
             st.info("No inventory history to display.")
         else:
-            st.dataframe(pd.DataFrame(all_logs), use_container_width=True, hide_index=True)
+            for log in all_logs:
+                cols = st.columns([5, 1])
+                with cols[0]:
+                    st.json(log)
+                with cols[1]:
+                    if st.button("Delete Log", key=f"delete_log_{log['log_id']}"):
+                        log_to_delete = inventory_log_collection.find_one({"log_id": log['log_id']})
+                        if log_to_delete:
+                            item_id = log_to_delete.get('item_id')
+                            quantity_change = log_to_delete.get('quantity_change', 0)
+                            if item_id and quantity_change != 0 and item_id != "MANUAL_ADJUSTMENT":
+                                inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": -quantity_change}})
+                            inventory_log_collection.delete_one({"log_id": log['log_id']})
+                            st.success(f"Log {log['log_id']} deleted and inventory adjusted.")
+                            st.rerun()
+
     except Exception as e:
         st.error(f"An error occurred while fetching inventory history: {e}")
 
