@@ -56,15 +56,7 @@ def log_inventory_change(item_id, item_name, quantity_change, purchase_cost_chan
     inventory_log_collection.insert_one(log_entry)
 
 def get_business_date(timestamp):
-    """
-    Calculates the business date for a given timestamp.
-    A new business day starts after 6 AM. Transactions before that
-    belong to the previous day's business cycle.
-    """
-    if timestamp.hour < 6:
-        return timestamp.date() - timedelta(days=1)
-    else:
-        return timestamp.date()
+    return timestamp.date()
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
