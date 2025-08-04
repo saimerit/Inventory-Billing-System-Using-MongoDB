@@ -1,0 +1,6 @@
+streamlit
+pandas
+pymongo
+shortuuid
+plotly
+openpyxl
