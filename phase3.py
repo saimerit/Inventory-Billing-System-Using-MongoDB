@@ -7,6 +7,8 @@ import plotly.express as px
 import io
 import hashlib
 import certifi
+import warnings
+warnings.filterwarnings("ignore")
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
