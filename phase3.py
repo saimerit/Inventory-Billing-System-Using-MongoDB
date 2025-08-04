@@ -491,47 +491,102 @@ def settings_page():
 
 def iam_page():
     st.header("🔑 Identity and Access Management (IAM)")
-    st.subheader("Add New User")
-    with st.form("add_user_form", clear_on_submit=True):
-        new_username = st.text_input("Username")
-        new_password = st.text_input("Password", type="password")
-        new_role = st.selectbox("Role", ["Admin", "Co-Admin", "Biller"])
-        if st.form_submit_button("Add User"):
-            if not new_username or not new_password:
-                st.warning("Username and password are required.")
-            elif users_collection.find_one({"username": new_username}):
-                st.error("Username already exists.")
-            elif not check_password_strength(new_password):
-                st.error("Password must be at least 6 characters long.")
-            else:
-                users_collection.insert_one({"username": new_username, "password": hash_password(new_password), "role": new_role, "status": "Offline", "last_seen": None})
-                st.success(f"User '{new_username}' added successfully.")
+    
+    iam_tabs = st.tabs(["Add User", "Manage Users", "My Profile"])
 
-    st.divider()
-    st.subheader("Manage Users")
-    all_users = list(users_collection.find({}, {'_id': 0, 'password': 0}))
-    if not all_users:
-        st.info("No users found.")
-    else:
-        users_df = pd.DataFrame(all_users)
-        online_threshold = datetime.now() - timedelta(minutes=5)
-        users_df['status'] = users_df['last_seen'].apply(lambda last_seen: "Online" if last_seen and last_seen > online_threshold else "Offline")
-        st.dataframe(users_df, use_container_width=True)
+    with iam_tabs[0]:
+        st.subheader("Add New User")
+        with st.form("add_user_form", clear_on_submit=True):
+            new_username = st.text_input("Username")
+            new_name = st.text_input("Full Name")
+            new_email = st.text_input("Email")
+            new_password = st.text_input("Password", type="password")
+            new_role = st.selectbox("Role", ["Admin", "Co-Admin", "Biller"])
+            if st.form_submit_button("Add User"):
+                if not all([new_username, new_password, new_name, new_email]):
+                    st.warning("All fields are required.")
+                elif users_collection.find_one({"username": new_username}):
+                    st.error("Username already exists.")
+                elif not check_password_strength(new_password):
+                    st.error("Password must be at least 6 characters long.")
+                else:
+                    users_collection.insert_one({
+                        "username": new_username, "name": new_name, "email": new_email,
+                        "password": hash_password(new_password), "role": new_role, 
+                        "status": "Offline", "last_seen": None
+                    })
+                    st.success(f"User '{new_username}' added successfully.")
 
-        st.subheader("Update User Role")
-        user_to_update = st.selectbox("Select User", options=[user['username'] for user in all_users])
-        new_role_for_user = st.selectbox("Select New Role", ["Admin", "Co-Admin", "Biller"], key="update_role_select")
-        if st.button("Update Role"):
-            users_collection.update_one({"username": user_to_update}, {"$set": {"role": new_role_for_user}})
-            st.success(f"Role for '{user_to_update}' updated to '{new_role_for_user}'.")
-            st.rerun()
+    with iam_tabs[1]:
+        st.subheader("Manage User Details")
+        all_users = list(users_collection.find({}, {'_id': 0, 'password': 0}))
+        if not all_users:
+            st.info("No users found.")
+        else:
+            users_df = pd.DataFrame(all_users)
+            online_threshold = datetime.now() - timedelta(minutes=5)
+            users_df['status'] = users_df['last_seen'].apply(lambda last_seen: "Online" if last_seen and last_seen > online_threshold else "Offline")
+            st.dataframe(users_df, use_container_width=True)
 
-        st.subheader("Delete User")
-        user_to_delete = st.selectbox("Select User to Delete", options=[user['username'] for user in all_users if user['username'] != 'admin'])
-        if st.button("Delete User"):
-            users_collection.delete_one({"username": user_to_delete})
-            st.success(f"User '{user_to_delete}' has been deleted.")
-            st.rerun()
+            user_to_update = st.selectbox("Select User to Update/Delete", options=[user['username'] for user in all_users])
+            if user_to_update:
+                user_details = users_collection.find_one({"username": user_to_update})
+                with st.form("update_user_form"):
+                    st.write(f"**Editing User: {user_to_update}**")
+                    new_username = st.text_input("New Username", value=user_details['username'])
+                    new_name = st.text_input("New Full Name", value=user_details.get('name', ''))
+                    new_email = st.text_input("New Email", value=user_details.get('email', ''))
+                    new_role = st.selectbox("New Role", ["Admin", "Co-Admin", "Biller"], index=["Admin", "Co-Admin", "Biller"].index(user_details['role']))
+                    new_password = st.text_input("New Password (leave blank to keep unchanged)", type="password")
+                    
+                    col1, col2 = st.columns([1,5])
+                    with col1:
+                        if st.form_submit_button("Update User"):
+                            update_data = {
+                                "username": new_username, "name": new_name,
+                                "email": new_email, "role": new_role
+                            }
+                            if new_password:
+                                if check_password_strength(new_password):
+                                    update_data['password'] = hash_password(new_password)
+                                else:
+                                    st.error("Password must be at least 6 characters long.")
+                                    return
+                            
+                            # Check if new username already exists
+                            if new_username != user_to_update and users_collection.find_one({"username": new_username}):
+                                st.error("New username already exists.")
+                            else:
+                                users_collection.update_one({"username": user_to_update}, {"$set": update_data})
+                                st.success(f"User '{user_to_update}' updated successfully.")
+                                st.rerun()
+
+                    with col2:
+                        if user_to_update != 'admin': # Prevent admin from being deleted
+                            if st.form_submit_button("Delete User"):
+                                users_collection.delete_one({"username": user_to_update})
+                                st.success(f"User '{user_to_update}' has been deleted.")
+                                st.rerun()
+
+    with iam_tabs[2]:
+        st.subheader("My Profile")
+        with st.form("update_my_password_form"):
+            st.write(f"You are logged in as **{st.session_state['username']}**")
+            my_new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm New Password", type="password")
+            if st.form_submit_button("Update My Password"):
+                if not my_new_password:
+                    st.warning("Password cannot be empty.")
+                elif not check_password_strength(my_new_password):
+                    st.error("Password must be at least 6 characters long.")
+                elif my_new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                else:
+                    users_collection.update_one(
+                        {"username": st.session_state['username']},
+                        {"$set": {"password": hash_password(my_new_password)}}
+                    )
+                    st.success("Your password has been updated successfully.")
 
 def log_book_page():
     st.header("📖 Log Book")
@@ -568,7 +623,11 @@ def login_page():
 
 def initial_setup():
     if users_collection.count_documents({}) == 0:
-        users_collection.insert_one({"username": "admin", "password": hash_password("admin"), "role": "Admin", "status": "Offline", "last_seen": None})
+        users_collection.insert_one({
+            "username": "admin", "password": hash_password("admin"), 
+            "role": "Admin", "status": "Offline", "last_seen": None,
+            "name": "Default Admin", "email": "admin@example.com"
+        })
 
 # --- App Entry Point ---
 def main_app():
