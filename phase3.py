@@ -17,7 +17,6 @@ MONGO_CONNECTION_STRING = "mongodb+srv://saiardhendu10:cR7y9ujOYZCm9i6v@colleage
 def get_mongo_client():
     """Establishes a connection to MongoDB and returns the client."""
     try:
-        # --- FIX: Added tlsCAFile parameter for secure SSL connection ---
         ca = certifi.where()
         client = MongoClient(MONGO_CONNECTION_STRING, tlsCAFile=ca)
         client.admin.command('ismaster')
@@ -80,7 +79,6 @@ def check_password():
     CORRECT_PASSWORD = "admin"
 
     def password_entered():
-        """Checks whether a password entered by the user is correct."""
         if st.session_state["password"] == CORRECT_PASSWORD:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
@@ -97,7 +95,7 @@ def check_password():
     else:
         return True
 
-# --- Page Implementations (Defined before they are called in main_app) ---
+# --- Page Implementations ---
 def inventory_management_page():
     st.header("Manage Your Inventory")
     
@@ -650,7 +648,8 @@ def iam_page():
         else:
             users_df = pd.DataFrame(all_users)
             online_threshold = get_ist_time() - timedelta(minutes=5)
-            users_df['status'] = users_df['last_seen'].apply(lambda last_seen: "Online" if last_seen and last_seen > online_threshold else "Offline")
+            users_df['last_seen'] = pd.to_datetime(users_df['last_seen']).dt.tz_localize(None)
+            users_df['status'] = users_df['last_seen'].apply(lambda last_seen: "Online" if pd.notna(last_seen) and last_seen > online_threshold else "Offline")
             st.dataframe(users_df, use_container_width=True)
 
             user_to_update = st.selectbox("Select User to Update/Delete", options=[user['username'] for user in all_users])
@@ -764,7 +763,11 @@ def main_app():
     
     INACTIVITY_TIMEOUT = timedelta(minutes=5)
     if 'last_activity' in st.session_state:
-        if get_ist_time() - st.session_state['last_activity'] > INACTIVITY_TIMEOUT:
+        last_activity = st.session_state['last_activity']
+        if hasattr(last_activity, 'tzinfo') and last_activity.tzinfo is not None:
+            last_activity = last_activity.replace(tzinfo=None)
+
+        if get_ist_time() - last_activity > INACTIVITY_TIMEOUT:
             username = st.session_state.get('username', 'User')
             update_user_status(username, 'Offline')
             for key in list(st.session_state.keys()):
