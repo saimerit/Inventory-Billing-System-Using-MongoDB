@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import plotly.express as px
 import io
 import hashlib
+import certifi
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
@@ -15,7 +16,9 @@ MONGO_CONNECTION_STRING = "mongodb+srv://saiardhendu10:cR7y9ujOYZCm9i6v@colleage
 def get_mongo_client():
     """Establishes a connection to MongoDB and returns the client."""
     try:
-        client = MongoClient(MONGO_CONNECTION_STRING)
+        # --- FIX: Added tlsCAFile parameter for secure SSL connection ---
+        ca = certifi.where()
+        client = MongoClient(MONGO_CONNECTION_STRING, tlsCAFile=ca)
         client.admin.command('ismaster')
         return client
     except Exception as e:
