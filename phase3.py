@@ -553,7 +553,6 @@ def iam_page():
                                     st.error("Password must be at least 6 characters long.")
                                     return
                             
-                            # Check if new username already exists
                             if new_username != user_to_update and users_collection.find_one({"username": new_username}):
                                 st.error("New username already exists.")
                             else:
@@ -562,7 +561,7 @@ def iam_page():
                                 st.rerun()
 
                     with col2:
-                        if user_to_update != 'admin': # Prevent admin from being deleted
+                        if user_to_update != 'admin':
                             if st.form_submit_button("Delete User"):
                                 users_collection.delete_one({"username": user_to_update})
                                 st.success(f"User '{user_to_update}' has been deleted.")
@@ -638,7 +637,7 @@ def main_app():
     if user_role == 'Admin':
         page_options = ["Inventory Management", "Billing System", "View Bills", "Analyze Profit", "Inventory History", "Daily Report", "IAM", "Log Book", "Settings"]
     elif user_role == 'Co-Admin':
-        page_options = ["Inventory Management", "Billing System", "View Bills", "Analyze Profit", "Inventory History", "Daily Report", "Settings"]
+        page_options = ["Inventory Management", "Billing System", "View Bills", "Analyze Profit", "Inventory History", "Daily Report"]
     else: # Biller
         page_options = ["Billing System", "View Bills"]
 
