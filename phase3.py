@@ -711,7 +711,7 @@ def iam_page():
                         {"username": st.session_state['username']},
                         {"$set": {"password": hash_password(my_new_password)}}
                     )
-                    st.success("Your password has been updated successfully.")
+                    st.success("Your password has been updated.")
 
 def log_book_page():
     st.header("📖 Log Book")
@@ -731,6 +731,10 @@ def log_book_page():
         st.dataframe(log_df, use_container_width=True, hide_index=True)
 
 def login_page():
+    if 'logout_message' in st.session_state:
+        st.success(st.session_state['logout_message'])
+        del st.session_state['logout_message']
+
     st.header("Login")
     with st.form("login_form"):
         username = st.text_input("Username")
@@ -759,18 +763,16 @@ def initial_setup():
 def main_app():
     st.title("📦 Inventory and Billing Management System")
     
-    # --- Inactivity Logout Logic ---
     INACTIVITY_TIMEOUT = timedelta(minutes=5)
     if 'last_activity' in st.session_state:
         if get_ist_time() - st.session_state['last_activity'] > INACTIVITY_TIMEOUT:
-            update_user_status(st.session_state['username'], 'Offline')
+            username = st.session_state.get('username', 'User')
+            update_user_status(username, 'Offline')
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
-            st.warning("You have been logged out due to inactivity.")
-            time.sleep(2)
+            st.session_state['logout_message'] = f"User '{username}' has been logged out due to inactivity."
             st.rerun()
     st.session_state['last_activity'] = get_ist_time()
-
 
     update_user_status(st.session_state['username'], 'Online')
 
