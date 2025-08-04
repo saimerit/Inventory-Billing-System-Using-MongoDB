@@ -8,6 +8,7 @@ import io
 import hashlib
 import certifi
 import time
+import pytz
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
@@ -41,6 +42,10 @@ st.set_page_config(
 )
 
 # --- Helper Functions ---
+def get_ist_time():
+    """Returns the current time in Indian Standard Time."""
+    return datetime.now(pytz.timezone('Asia/Kolkata'))
+
 def generate_unique_id(prefix):
     return f"{prefix}-{shortuuid.uuid()}"
 
@@ -52,7 +57,7 @@ def log_inventory_change(item_id, item_name, quantity_change, purchase_cost_chan
     log_entry = {
         "log_id": generate_unique_id("LOG"), "item_id": item_id, "item_name": item_name,
         "quantity_change": quantity_change, "purchase_cost_change": purchase_cost_change,
-        "reason": reason, "timestamp": datetime.now()
+        "reason": reason, "timestamp": get_ist_time()
     }
     inventory_log_collection.insert_one(log_entry)
 
@@ -68,7 +73,7 @@ def check_password_strength(password):
 def update_user_status(username, status):
     users_collection.update_one(
         {"username": username},
-        {"$set": {"status": status, "last_seen": datetime.now()}}
+        {"$set": {"status": status, "last_seen": get_ist_time()}}
     )
 
 def check_password():
@@ -117,7 +122,7 @@ def inventory_management_page():
                     item_id = generate_unique_id("ITEM")
                     item_data = {
                         "item_id": item_id, "item_name": item_name, "purchase_price": purchase_price,
-                        "selling_price": selling_price, "quantity": quantity, "created_at": datetime.now()
+                        "selling_price": selling_price, "quantity": quantity, "created_at": get_ist_time()
                     }
                     inventory_collection.insert_one(item_data)
                     log_inventory_change(item_id, item_name, quantity, purchase_price * quantity, "Initial Stock")
@@ -317,7 +322,7 @@ def billing_system_page():
                             updated_bill_data = {
                                 "items": final_bill_items, "total_purchase_cost": total_purchase_cost, "total_sell_price": total_sell_price,
                                 "profit": profit, "payment_mode": payment_mode, "payment_status": payment_status,
-                                "customer_name": customer_name if sell_at_cost else "", "timestamp": datetime.now(),
+                                "customer_name": customer_name if sell_at_cost else "", "timestamp": get_ist_time(),
                                 "last_edited_by": st.session_state['username']
                             }
                             bills_collection.update_one({"bill_id": original_bill['bill_id']}, {"$set": updated_bill_data})
@@ -330,7 +335,7 @@ def billing_system_page():
                                 "bill_id": generate_unique_id("BILL"), "items": final_bill_items, "total_purchase_cost": total_purchase_cost,
                                 "total_sell_price": total_sell_price, "profit": profit, "payment_mode": payment_mode,
                                 "payment_status": payment_status, "customer_name": customer_name if sell_at_cost else "", 
-                                "created_by": st.session_state['username'], "timestamp": datetime.now()
+                                "created_by": st.session_state['username'], "timestamp": get_ist_time()
                             }
                             bills_collection.insert_one(bill_data)
                             for item in final_bill_items:
@@ -359,7 +364,7 @@ def billing_system_page():
                             "bill_id": generate_unique_id("MISS"), "items": [{"item_id": item_id, "item_name": selected_item_name, "quantity": missing_quantity}],
                             "total_purchase_cost": total_purchase_cost, "total_sell_price": 0, "profit": -total_purchase_cost,
                             "payment_mode": "N/A", "payment_status": "Paid", "customer_name": "Missing Stock", 
-                            "created_by": st.session_state['username'], "timestamp": datetime.now()
+                            "created_by": st.session_state['username'], "timestamp": get_ist_time()
                         }
                         bills_collection.insert_one(bill_data)
                         inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": -missing_quantity}})
@@ -442,7 +447,7 @@ def analyze_profit_page():
     else:
         bills_df = pd.DataFrame(all_bills) if all_bills else pd.DataFrame()
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             if not bills_df.empty:
                 unpaid_bills_df = bills_df[bills_df['payment_status'] == 'Unpaid']
@@ -457,6 +462,13 @@ def analyze_profit_page():
                 st.metric("Total Realized Profit", f"₹{total_profit:.2f}")
             else:
                 st.metric("Total Realized Profit", "₹0.00")
+        with col3:
+            if not bills_df.empty:
+                paid_bills_df['business_date'] = paid_bills_df['timestamp'].apply(get_business_date)
+                today_profit = paid_bills_df[paid_bills_df['business_date'] == get_ist_time().date()]['profit'].sum()
+                st.metric("Today's Realized Profit", f"₹{today_profit:.2f}")
+            else:
+                st.metric("Today's Realized Profit", "₹0.00")
 
 
         st.subheader("Overall Sales vs. Purchases")
@@ -548,7 +560,7 @@ def daily_report_page():
     st.header("📄 Daily Report")
     st.write("Generate a downloadable Excel report of the current inventory status and yesterday's transactions.")
 
-    now = datetime.now()
+    now = get_ist_time()
     today_business_date = get_business_date(now)
     yesterday_business_date = today_business_date - timedelta(days=1)
     start_of_report_period = datetime.combine(yesterday_business_date, datetime.min.time()).replace(hour=6)
@@ -638,7 +650,7 @@ def iam_page():
             st.info("No users found.")
         else:
             users_df = pd.DataFrame(all_users)
-            online_threshold = datetime.now() - timedelta(minutes=5)
+            online_threshold = get_ist_time() - timedelta(minutes=5)
             users_df['status'] = users_df['last_seen'].apply(lambda last_seen: "Online" if last_seen and last_seen > online_threshold else "Offline")
             st.dataframe(users_df, use_container_width=True)
 
@@ -729,7 +741,7 @@ def login_page():
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = user['username']
                 st.session_state['role'] = user['role']
-                st.session_state['last_activity'] = datetime.now()
+                st.session_state['last_activity'] = get_ist_time()
                 update_user_status(username, 'Online')
                 st.rerun()
             else:
@@ -750,14 +762,14 @@ def main_app():
     # --- Inactivity Logout Logic ---
     INACTIVITY_TIMEOUT = timedelta(minutes=5)
     if 'last_activity' in st.session_state:
-        if datetime.now() - st.session_state['last_activity'] > INACTIVITY_TIMEOUT:
+        if get_ist_time() - st.session_state['last_activity'] > INACTIVITY_TIMEOUT:
             update_user_status(st.session_state['username'], 'Offline')
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.warning("You have been logged out due to inactivity.")
             time.sleep(2)
             st.rerun()
-    st.session_state['last_activity'] = datetime.now()
+    st.session_state['last_activity'] = get_ist_time()
 
 
     update_user_status(st.session_state['username'], 'Online')
