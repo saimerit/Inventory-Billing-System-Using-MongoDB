@@ -513,21 +513,21 @@ def inventory_history_page():
         if not all_logs:
             st.info("No inventory history to display.")
         else:
-            for log in all_logs:
-                cols = st.columns([5, 1])
-                with cols[0]:
-                    st.json(log)
-                with cols[1]:
-                    if st.button("Delete Log", key=f"delete_log_{log['log_id']}"):
-                        log_to_delete = inventory_log_collection.find_one({"log_id": log['log_id']})
-                        if log_to_delete:
-                            item_id = log_to_delete.get('item_id')
-                            quantity_change = log_to_delete.get('quantity_change', 0)
-                            if item_id and quantity_change != 0 and item_id != "MANUAL_ADJUSTMENT":
-                                inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": -quantity_change}})
-                            inventory_log_collection.delete_one({"log_id": log['log_id']})
-                            st.success(f"Log {log['log_id']} deleted and inventory adjusted.")
-                            st.rerun()
+            log_df = pd.DataFrame(all_logs)
+            st.dataframe(log_df, use_container_width=True, hide_index=True)
+
+            st.subheader("Delete a Log Entry")
+            log_to_delete_id = st.selectbox("Select Log ID to delete", options=[log['log_id'] for log in all_logs])
+            if st.button("Delete Log"):
+                log_to_delete = inventory_log_collection.find_one({"log_id": log_to_delete_id})
+                if log_to_delete:
+                    item_id = log_to_delete.get('item_id')
+                    quantity_change = log_to_delete.get('quantity_change', 0)
+                    if item_id and quantity_change != 0 and item_id != "MANUAL_ADJUSTMENT":
+                        inventory_collection.update_one({"item_id": item_id}, {"$inc": {"quantity": -quantity_change}})
+                    inventory_log_collection.delete_one({"log_id": log_to_delete_id})
+                    st.success(f"Log {log_to_delete_id} deleted and inventory adjusted.")
+                    st.rerun()
 
     except Exception as e:
         st.error(f"An error occurred while fetching inventory history: {e}")
