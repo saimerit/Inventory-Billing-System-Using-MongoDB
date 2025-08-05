@@ -17,6 +17,7 @@ MONGO_CONNECTION_STRING = "mongodb+srv://saiardhendu10:cR7y9ujOYZCm9i6v@colleage
 def get_mongo_client():
     """Establishes a connection to MongoDB and returns the client."""
     try:
+        # --- FIX: Added tlsCAFile parameter for secure SSL connection ---
         ca = certifi.where()
         client = MongoClient(MONGO_CONNECTION_STRING, tlsCAFile=ca)
         client.admin.command('ismaster')
@@ -79,6 +80,7 @@ def check_password():
     CORRECT_PASSWORD = "admin"
 
     def password_entered():
+        """Checks whether a password entered by the user is correct."""
         if st.session_state["password"] == CORRECT_PASSWORD:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
@@ -95,7 +97,7 @@ def check_password():
     else:
         return True
 
-# --- Page Implementations ---
+# --- Page Implementations (Defined before they are called in main_app) ---
 def inventory_management_page():
     st.header("Manage Your Inventory")
     
@@ -438,13 +440,14 @@ def analyze_profit_page():
     st.header("📊 Profit Analysis")
     all_bills = list(bills_collection.find({}, {'_id': 0}))
     all_inventory_logs = list(inventory_log_collection.find({}, {'_id': 0}))
+    all_inventory = list(inventory_collection.find({}, {'_id': 0}))
 
     if not all_bills and not all_inventory_logs:
         st.info("No data available to analyze.")
     else:
         bills_df = pd.DataFrame(all_bills) if all_bills else pd.DataFrame()
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             if not bills_df.empty:
                 unpaid_bills_df = bills_df[bills_df['payment_status'] == 'Unpaid']
@@ -460,12 +463,15 @@ def analyze_profit_page():
             else:
                 st.metric("Total Realized Profit", "₹0.00")
         with col3:
-            if not bills_df.empty:
+            if not bills_df.empty and not paid_bills_df.empty:
                 paid_bills_df['business_date'] = paid_bills_df['timestamp'].apply(get_business_date)
                 today_profit = paid_bills_df[paid_bills_df['business_date'] == get_ist_time().date()]['profit'].sum()
                 st.metric("Today's Realized Profit", f"₹{today_profit:.2f}")
             else:
                 st.metric("Today's Realized Profit", "₹0.00")
+        with col4:
+            total_inventory_cost = sum(item['purchase_price'] * item['quantity'] for item in all_inventory)
+            st.metric("Value of Unsold Inventory", f"₹{total_inventory_cost:.2f}")
 
 
         st.subheader("Overall Sales vs. Purchases")
