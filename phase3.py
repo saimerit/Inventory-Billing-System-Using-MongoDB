@@ -17,9 +17,14 @@ MONGO_CONNECTION_STRING = "mongodb+srv://saiardhendu10:cR7y9ujOYZCm9i6v@colleage
 def get_mongo_client():
     """Establishes a connection to MongoDB and returns the client."""
     try:
-        # --- FIX: Added tlsCAFile parameter for secure SSL connection ---
-        ca = certifi.where()
-        client = MongoClient(MONGO_CONNECTION_STRING, tlsCAFile=ca)
+        if "mongodb+srv" in MONGO_CONNECTION_STRING:
+            # For Atlas connection, use TLS/SSL with certifi
+            ca = certifi.where()
+            client = MongoClient(MONGO_CONNECTION_STRING, tlsCAFile=ca)
+        else:
+            # For local connection, do not use TLS/SSL
+            client = MongoClient(MONGO_CONNECTION_STRING)
+            
         client.admin.command('ismaster')
         return client
     except Exception as e:
@@ -32,6 +37,7 @@ inventory_collection = db.inventory
 bills_collection = db.bills
 inventory_log_collection = db.inventory_log
 users_collection = db.users
+profit_log_collection = db.profit_log
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -441,13 +447,14 @@ def analyze_profit_page():
     all_bills = list(bills_collection.find({}, {'_id': 0}))
     all_inventory_logs = list(inventory_log_collection.find({}, {'_id': 0}))
     all_inventory = list(inventory_collection.find({}, {'_id': 0}))
+    all_profit_logs = list(profit_log_collection.find({}, {'_id': 0}))
 
     if not all_bills and not all_inventory_logs:
         st.info("No data available to analyze.")
     else:
         bills_df = pd.DataFrame(all_bills) if all_bills else pd.DataFrame()
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             if not bills_df.empty:
                 unpaid_bills_df = bills_df[bills_df['payment_status'] == 'Unpaid']
@@ -459,17 +466,24 @@ def analyze_profit_page():
             if not bills_df.empty:
                 paid_bills_df = bills_df[bills_df['payment_status'] == 'Paid'].copy()
                 total_profit = paid_bills_df['profit'].sum()
-                st.metric("Total Realized Profit", f"₹{total_profit:.2f}")
+                st.metric("Total Profit Achieved", f"₹{total_profit:.2f}")
             else:
-                st.metric("Total Realized Profit", "₹0.00")
+                st.metric("Total Profit Achieved", "₹0.00")
         with col3:
+            if not bills_df.empty and not paid_bills_df.empty:
+                total_distributed_profit = sum(log['amount_distributed'] for log in all_profit_logs)
+                undistributed_profit = total_profit - total_distributed_profit
+                st.metric("Current Undistributed Profit", f"₹{undistributed_profit:.2f}")
+            else:
+                st.metric("Current Undistributed Profit", "₹0.00")
+        with col4:
             if not bills_df.empty and not paid_bills_df.empty:
                 paid_bills_df['business_date'] = paid_bills_df['timestamp'].apply(get_business_date)
                 today_profit = paid_bills_df[paid_bills_df['business_date'] == get_ist_time().date()]['profit'].sum()
                 st.metric("Today's Realized Profit", f"₹{today_profit:.2f}")
             else:
                 st.metric("Today's Realized Profit", "₹0.00")
-        with col4:
+        with col5:
             total_inventory_cost = sum(item['purchase_price'] * item['quantity'] for item in all_inventory)
             st.metric("Value of Unsold Inventory", f"₹{total_inventory_cost:.2f}")
 
@@ -734,6 +748,68 @@ def log_book_page():
         log_df = pd.DataFrame(log_data)
         st.dataframe(log_df, use_container_width=True, hide_index=True)
 
+def profit_log_book_page():
+    st.header("💰 Profit Log Book")
+    
+    all_bills = list(bills_collection.find({"payment_status": "Paid"}, {'_id': 0}))
+    total_realized_profit = sum(bill['profit'] for bill in all_bills)
+    
+    all_profit_logs = list(profit_log_collection.find({}, {'_id': 0}))
+    total_distributed_profit = sum(log['amount_distributed'] for log in all_profit_logs)
+    
+    undistributed_profit = total_realized_profit - total_distributed_profit
+    st.metric("Current Undistributed Profit", f"₹{undistributed_profit:.2f}")
+
+    st.subheader("Distribute Profit")
+    num_partners = st.number_input("Number of Partners", min_value=1, step=1, key="num_partners")
+    
+    profit_per_partner = undistributed_profit / num_partners if num_partners > 0 else 0
+
+    with st.form("distribute_profit_form"):
+        partners = []
+        for i in range(num_partners):
+            col1, col2 = st.columns(2)
+            with col1:
+                name = st.text_input(f"Partner {i+1} Name", key=f"partner_name_{i}")
+            with col2:
+                amount = st.number_input(f"Amount for Partner {i+1}", value=profit_per_partner, key=f"partner_amount_{i}", format="%.2f")
+            partners.append({"name": name, "amount": amount})
+        
+        if st.form_submit_button("Distribute Profit"):
+            total_distribution_amount = sum(p['amount'] for p in partners)
+            
+            if any(not p['name'] for p in partners):
+                st.error("All partner names must be filled.")
+            elif total_distribution_amount > undistributed_profit:
+                st.error(f"Total distribution amount (₹{total_distribution_amount:.2f}) cannot exceed the available profit (₹{undistributed_profit:.2f}).")
+            else:
+                profit_log_entry = {
+                    "log_id": generate_unique_id("PLOG"),
+                    "amount_distributed": total_distribution_amount,
+                    "partners": partners,
+                    "distributed_by": st.session_state['username'],
+                    "timestamp": get_ist_time()
+                }
+                profit_log_collection.insert_one(profit_log_entry)
+                st.success(f"Successfully logged distribution of ₹{total_distribution_amount:.2f}.")
+                st.rerun()
+
+    st.divider()
+    st.subheader("Past Profit Distributions")
+    if not all_profit_logs:
+        st.info("No profit distributions have been logged.")
+    else:
+        for log in all_profit_logs:
+            with st.expander(f"Log ID: {log['log_id']} - {log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}"):
+                st.write(f"**Total Amount Distributed:** ₹{log['amount_distributed']:.2f}")
+                st.write(f"**Distributed By:** {log['distributed_by']}")
+                st.dataframe(pd.DataFrame(log['partners']))
+                if st.button("Delete Distribution", key=f"delete_plog_{log['log_id']}"):
+                    profit_log_collection.delete_one({"log_id": log['log_id']})
+                    st.success(f"Profit distribution log {log['log_id']} deleted.")
+                    st.rerun()
+
+
 def login_page():
     if 'logout_message' in st.session_state:
         st.success(st.session_state['logout_message'])
@@ -786,7 +862,7 @@ def main_app():
 
     user_role = st.session_state['role']
     if user_role == 'Admin':
-        page_options = ["Inventory Management", "Billing System", "View Bills", "Analyze Profit", "Inventory History", "Daily Report", "IAM", "Log Book", "Settings"]
+        page_options = ["Inventory Management", "Billing System", "View Bills", "Analyze Profit", "Inventory History", "Daily Report", "IAM", "Log Book", "Profit Log Book", "Settings"]
     elif user_role == 'Co-Admin':
         page_options = ["Inventory Management", "Billing System", "View Bills", "Analyze Profit", "Inventory History", "Daily Report"]
     else: # Biller
@@ -815,6 +891,8 @@ def main_app():
     elif st.session_state.page == "IAM": iam_page()
     elif st.session_state.page == "Log Book":
         if check_password(): log_book_page()
+    elif st.session_state.page == "Profit Log Book":
+        if check_password(): profit_log_book_page()
     elif st.session_state.page == "Settings": settings_page()
 
 
