@@ -11,7 +11,7 @@ import time
 
 # --- MongoDB Connection ---
 # IMPORTANT: Replace with your MongoDB connection string.
-MONGO_CONNECTION_STRING = st.secret["Mongo_API"]["key"]
+MONGO_CONNECTION_STRING = st.secrets["Mongo_API"]["key"]
 
 @st.cache_resource
 def get_mongo_client():
